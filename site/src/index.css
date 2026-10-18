@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/* OpenApp site. One family (Geologica). Cream and black.
+   Meaning is carried by treatment, not hue: your Mac = cream panel with a black outline,
+   the agent's VM = an inverted (black) panel, the bridge = dashed outlines; ochre marks
+   only "needs a person"; cobalt appears once, when the hero window is asked for colour. */
+
+@font-face {
+  font-family: "Geologica";
+  src: url("/fonts/geologica-latin-var.woff2") format("woff2");
+  font-weight: 300 800;
+  font-display: swap;
+}
+
+:root {
+  --paper: #f3eee3;
+  --surface: #fbf8f1;
+  --ink: #141210;
+  --ink-2: #5c564b;
+  --line: #ddd5c5;
+  --dot: #d6cdbb;
+  --mac: #141210;
+  --mac-soft: #ece5d6;
+  --vm: #141210;
+  --vm-soft: #e8e1d1;
+  --bridge: #8a6626;
+  --bridge-soft: #efe4cc;
+  --accent-a: #141210;
+  --accent-b: #3557d6;
+  --shadow: 20 18 16;
+  --spot-1: hsla(42, 80%, 99%, 0.75);
+  --spot-2: hsla(42, 80%, 99%, 0.28);
+  --radius-win: 16px;
+  --radius-ctl: 9px;
+  --measure: 66ch;
+  --pad: clamp(16px, 4vw, 48px);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0e0d0b;
+    --surface: #181613;
+    --ink: #f3eee3;
+    --ink-2: #b5ad9e;
+    --line: #2e2a24;
+    --dot: #26231e;
+    --mac: #f3eee3;
+    --mac-soft: #1d1a16;
+    --vm: #f3eee3;
+    --vm-soft: #221f1a;
+    --bridge: #d3a85e;
+    --bridge-soft: #2b2316;
+    --accent-a: #f3eee3;
+    --accent-b: #8aa0ff;
+    --shadow: 0 0 0;
+    --spot-1: hsla(42, 60%, 88%, 0.10);
+    --spot-2: hsla(42, 60%, 88%, 0.035);
+    color-scheme: dark;
+  }
+}
+
+/* Inverted scope: the agent's VM panel (black in light mode, cream in dark mode). */
+.scope-inverse {
+  --paper: #141210; --surface: #1d1a16; --ink: #f3eee3; --ink-2: #c9c1b1; --line: #3a352d;
+  --dot: #2e2a24; --mac-soft: #26221c; --vm: #f3eee3; --vm-soft: #26221c;
+  background: var(--paper); color: var(--ink);
+}
+@media (prefers-color-scheme: dark) {
+  .scope-inverse {
+    --paper: #f3eee3; --surface: #fbf8f1; --ink: #141210; --ink-2: #5c564b; --line: #ddd5c5;
+    --dot: #d6cdbb; --mac-soft: #ece5d6; --vm: #141210; --vm-soft: #e8e1d1;
+  }
+}
+
+@theme inline {
+  --font-sans: "Geologica", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-line: var(--line);
+  --color-dot: var(--dot);
+  --color-mac: var(--mac);
+  --color-mac-soft: var(--mac-soft);
+  --color-vm: var(--vm);
+  --color-vm-soft: var(--vm-soft);
+  --color-bridge: var(--bridge);
+  --color-bridge-soft: var(--bridge-soft);
+  --radius-win: var(--radius-win);
+  --radius-ctl: var(--radius-ctl);
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-weight: 380;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    overflow-x: clip;
+  }
+  a { color: var(--vm); text-underline-offset: 0.18em; text-decoration-thickness: 1px; text-decoration-line: underline; }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 3px solid var(--bridge); outline-offset: 3px; border-radius: 4px; }
+
+  h1, h2, h3, h4 { line-height: 1.12; margin: 0; font-weight: 640; letter-spacing: -0.01em; }
+  h2 { font-size: clamp(1.75rem, 1.2rem + 2vw, 2.45rem); margin-bottom: 0.6em; letter-spacing: -0.02em; }
+  h3 { font-size: 1.12rem; font-weight: 620; margin-bottom: 0.4em; }
+  p { margin: 0 0 1em; max-width: var(--measure); }
+  ul, ol { margin: 0; }
+  kbd, code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--mac-soft);
+    border-radius: 5px;
+    padding: 0.08em 0.35em;
+  }
+  pre {
+    margin: 0 0 1em;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-ctl);
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  pre .k { color: var(--vm); }
+  strong { font-weight: 640; }
+}
+
+@layer components {
+  .wrap { max-width: 1280px; margin-inline: auto; padding-inline: var(--pad); }
+  .section { padding-block: clamp(64px, 9vw, 120px); }
+  .rule { border-top: 1px solid var(--line); }
+  .fine { font-size: 0.875rem; color: var(--ink-2); }
+  .section-lede { font-size: 1.15rem; color: var(--ink-2); }
+  .wordmark {
+    display: inline-flex; align-items: center; gap: 9px;
+    color: var(--ink); text-decoration: none; font-weight: 680; font-size: 1.1rem;
+  }
+  .btn {
+    display: inline-block; padding: 12px 20px; border-radius: var(--radius-ctl);
+    border: 1.5px solid var(--ink); color: var(--ink); text-decoration: none; font-weight: 560;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .btn:hover { background: var(--mac-soft); }
+  .btn-primary { background: var(--ink); color: var(--paper); }
+  .btn-primary:hover { background: var(--vm); border-color: var(--vm); color: var(--surface); }
+  .skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; z-index: 6000; }
+  .skip:focus { left: 8px; }
+  .dot-grid {
+    background-image: radial-gradient(var(--dot) 1px, transparent 1.2px);
+    background-size: 14px 14px;
+  }
+}

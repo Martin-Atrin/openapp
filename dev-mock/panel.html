@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Mock panel</title>
+<style>
+  html, body { margin: 0; background: transparent; }
+  body { font-family: var(--oa-font, system-ui, sans-serif); color: var(--oa-text, #1d1c1a); font-size: 14px; padding: 14px; }
+  h3 { margin: 0 0 6px; font-size: 15px; }
+  p { margin: 0 0 12px; color: var(--oa-text-muted, #77736c); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; cursor: pointer; padding: 7px 12px; border-radius: var(--oa-radius, 10px); border: 1px solid var(--oa-border, #ddd);
+    background: var(--oa-surface, #fff); color: var(--oa-text, #111); }
+  button.primary { background: var(--oa-accent, #4457d6); color: var(--oa-accent-text, #fff); border-color: transparent; }
+  pre { margin: 12px 0 0; padding: 10px; border-radius: var(--oa-radius, 10px); background: var(--oa-surface-2, #f3f1ed);
+    font-family: var(--oa-font-mono, ui-monospace, monospace); font-size: 12px; white-space: pre-wrap; min-height: 1.4em; }
+</style>
+</head>
+<body>
+  <h3>HTML view (iframe)</h3>
+  <p>Styled with --oa-* variables. Switch the theme and this restyles.</p>
+  <div class="row">
+    <button class="primary" id="call">openapp.call("echo")</button>
+    <button id="ins">composer.insert</button>
+    <button id="fail">call("fail")</button>
+    <button id="grow">Grow</button>
+  </div>
+  <pre id="out">(result appears here)</pre>
+  <div id="extra"></div>
+<script>
+  // Tiny window.openapp shim implementing the postMessage protocol (the real kernel injects bridge.js).
+  (function () {
+    var seq = 0, pending = {}, themeCbs = [];
+    function send(msg) { parent.postMessage(msg, "*"); }
+    function rpc(msg) {
+      return new Promise(function (resolve, reject) {
+        var id = ++seq; pending[id] = { resolve: resolve, reject: reject };
+        msg.id = id; send(msg);
+      });
+    }
+    window.addEventListener("message", function (e) {
+      var m = e.data; if (!m || typeof m !== "object" || !m.oa) return;
+      if (m.oa === "result" && pending[m.id]) {
+        var p = pending[m.id]; delete pending[m.id];
+        m.ok ? p.resolve(m.result) : p.reject(new Error(m.error));
+      } else if (m.oa === "theme") {
+        for (var k in m.vars) document.documentElement.style.setProperty(k, m.vars[k]);
+        themeCbs.forEach(function (cb) { cb(m.vars); });
+      }
+    });
+    window.openapp = {
+      call: function (tool, args) { return rpc({ oa: "call", tool: tool, args: args || {} }); },
+      host: function (action, args) { return rpc({ oa: "host", action: action, args: args || {} }); },
+      onTheme: function (cb) { themeCbs.push(cb); }
+    };
+    window.addEventListener("error", function (e) { send({ oa: "error", message: String(e.message) }); });
+    function resize() { send({ oa: "resize", height: Math.ceil(document.documentElement.getBoundingClientRect().height) }); }
+    new ResizeObserver(resize).observe(document.body);
+    send({ oa: "ready" }); resize();
+  })();
+
+  var out = document.getElementById("out");
+  document.getElementById("call").onclick = function () {
+    openapp.call("echo", { n: 1 }).then(function (r) { out.textContent = JSON.stringify(r, null, 2); }, function (e) { out.textContent = "error: " + e.message; });
+  };
+  document.getElementById("fail").onclick = function () {
+    openapp.call("fail", {}).then(function (r) { out.textContent = JSON.stringify(r); }, function (e) { out.textContent = "error: " + e.message; });
+  };
+  document.getElementById("ins").onclick = function () { openapp.host("composer.insert", { text: "Hello from the iframe " }); };
+  document.getElementById("grow").onclick = function () {
+    var d = document.createElement("div"); d.style.cssText = "height:60px;margin-top:8px;border-radius:var(--oa-radius);background:var(--oa-surface-2)";
+    d.textContent = "more content " + document.getElementById("extra").children.length; document.getElementById("extra").appendChild(d);
+  };
+</script>
+</body>
+</html>

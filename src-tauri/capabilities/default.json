@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions for the shell: the main window and module windows (§21 G4 win-<id>); plugins are used from Rust only",
+  "windows": [
+    "main",
+    "win-*"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

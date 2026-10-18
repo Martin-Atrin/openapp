@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- §18.1: every usage a host module may need (same list as host_modules::USAGE_DESCRIPTIONS, test-enforced;
+       also embedded into each host-module binary). macOS asks the user before any access. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>OpenApp lets features you build use the microphone when you allow it.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>OpenApp lets features you build use the camera when you allow it.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>OpenApp lets features you build read your contacts when you allow it.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>OpenApp lets features you build use your calendars when you allow it.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>OpenApp lets features you build use your calendars when you allow it.</string>
+  <key>NSRemindersUsageDescription</key>
+  <string>OpenApp lets features you build use your reminders when you allow it.</string>
+  <key>NSRemindersFullAccessUsageDescription</key>
+  <string>OpenApp lets features you build use your reminders when you allow it.</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>OpenApp lets features you build read your photos when you allow it.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>OpenApp lets features you build add photos to your library when you allow it.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>OpenApp lets features you build use your location while you use the app.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>OpenApp lets features you build use your location while you use the app.</string>
+  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+  <string>OpenApp lets features you build use your location when you allow it.</string>
+  <key>NSLocationAlwaysUsageDescription</key>
+  <string>OpenApp lets features you build use your location when you allow it.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>OpenApp lets features you build control other apps when you allow it.</string>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>OpenApp lets features you build use Bluetooth when you allow it.</string>
+  <key>NSBluetoothPeripheralUsageDescription</key>
+  <string>OpenApp lets features you build use Bluetooth when you allow it.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>OpenApp transcribes your speech on this Mac when you allow it.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>OpenApp lets features you build capture the screen when you allow it.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>OpenApp lets features you build use files on your Desktop when you allow it.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>OpenApp lets features you build use files in Documents when you allow it.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>OpenApp lets features you build use files in Downloads when you allow it.</string>
+  <key>NSAppleMusicUsageDescription</key>
+  <string>OpenApp lets features you build use your music library and what is playing when you allow it.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>OpenApp lets features you build find and talk to devices on your local network when you allow it.</string>
+  <!-- LAN discovery from host modules (NSLocalNetworkUsageDescription above) -->
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_http._tcp</string>
+    <string>_https._tcp</string>
+    <string>_openapp._tcp</string>
+    <string>_hap._tcp</string>
+    <string>_home-assistant._tcp</string>
+    <string>_mqtt._tcp</string>
+    <string>_googlecast._tcp</string>
+    <string>_airplay._tcp</string>
+    <string>_raop._tcp</string>
+    <string>_spotify-connect._tcp</string>
+    <string>_ipp._tcp</string>
+    <string>_printer._tcp</string>
+    <string>_smb._tcp</string>
+    <string>_ssh._tcp</string>
+  </array>
+  <!-- Apple silicon only (msb / Hypervisor.framework and the Swift sidecar are arm64). LSMinimumSystemVersion 26.0
+       comes from tauri.conf.json bundle.macOS.minimumSystemVersion (the sidecar needs macOS 26). -->
+  <key>LSArchitecturePriority</key>
+  <array>
+    <string>arm64</string>
+  </array>
+  <!-- §21 G4: deep links openapp://<module>/<path> -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.polygonface.openapp</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>openapp</string>
+      </array>
+    </dict>
+  </array>
+  <!-- §21 G4: "Open With › OpenApp" for any file; the kernel routes it by manifest "opens" (never the default app) -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Any file</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.data</string>
+        <string>public.content</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

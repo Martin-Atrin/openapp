@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 520" width="880" height="520" role="img" aria-labelledby="t d">
+  <title id="t">OpenApp after three requests</title>
+  <desc id="d">An OpenApp window that started as one chat box. After three requests it has a sidebar of chats, a microphone button next to Send, and a new colour scheme.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .muted { fill: #5c564b; }
+    .ink { fill: #141210; }
+  </style>
+  <rect x="0" y="0" width="880" height="520" rx="22" fill="#f3eee3"/>
+  <!-- window -->
+  <rect x="40" y="36" width="800" height="448" rx="16" fill="#fbf8f1" stroke="#ddd5c5"/>
+  <line x1="40" y1="76" x2="840" y2="76" stroke="#ddd5c5"/>
+  <circle cx="64" cy="56" r="6" fill="#ddd5c5"/><circle cx="84" cy="56" r="6" fill="#ddd5c5"/><circle cx="104" cy="56" r="6" fill="#ddd5c5"/>
+  <text x="440" y="61" text-anchor="middle" font-size="13" class="muted">OpenApp</text>
+  <!-- rail -->
+  <line x1="240" y1="76" x2="240" y2="484" stroke="#ddd5c5"/>
+  <text x="64" y="112" font-size="14" font-weight="600" class="ink">Chats</text>
+  <rect x="41" y="128" width="199" height="34" fill="#e4e9fb"/>
+  <rect x="41" y="128" width="4" height="34" fill="#3557d6"/>
+  <text x="64" y="150" font-size="14" class="ink">Dictation</text>
+  <text x="64" y="190" font-size="14" class="muted">Sidebar</text>
+  <text x="64" y="226" font-size="14" class="muted">Colours</text>
+  <!-- conversation -->
+  <rect x="606" y="104" width="206" height="34" rx="14" fill="#ece5d6"/>
+  <text x="709" y="126" text-anchor="middle" font-size="14" class="ink">let me dictate to you</text>
+  <circle cx="276" cy="160" r="4.5" fill="#3557d6"/>
+  <text x="290" y="165" font-size="14" class="muted">Added a microphone next to Send.</text>
+  <rect x="596" y="186" width="216" height="34" rx="14" fill="#ece5d6"/>
+  <text x="704" y="208" text-anchor="middle" font-size="14" class="ink">a sidebar with my chats</text>
+  <circle cx="276" cy="242" r="4.5" fill="#3557d6"/>
+  <text x="290" y="247" font-size="14" class="muted">Added a left sidebar with your chats.</text>
+  <rect x="608" y="268" width="204" height="34" rx="14" fill="#ece5d6"/>
+  <text x="710" y="290" text-anchor="middle" font-size="14" class="ink">make it more colourful</text>
+  <circle cx="276" cy="324" r="4.5" fill="#3557d6"/>
+  <text x="290" y="329" font-size="14" class="muted">New colour scheme applied.</text>
+  <!-- composer -->
+  <rect x="264" y="412" width="552" height="50" rx="14" fill="#fbf8f1" stroke="#ddd5c5" stroke-width="1.5"/>
+  <text x="284" y="442" font-size="14" class="muted">Message, or /build to change the app</text>
+  <rect x="688" y="422" width="32" height="30" rx="8" fill="#e4e9fb"/>
+  <rect x="700" y="428" width="8" height="13" rx="4" fill="#3557d6"/>
+  <path d="M696 437a8 8 0 0 0 16 0M704 445v4" fill="none" stroke="#3557d6" stroke-width="2" stroke-linecap="round"/>
+  <rect x="728" y="422" width="76" height="30" rx="8" fill="#3557d6"/>
+  <text x="766" y="442" text-anchor="middle" font-size="14" font-weight="600" fill="#fbf8f1">Send</text>
+</svg>

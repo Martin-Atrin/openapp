@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.docs-session/
+.DS_Store
+src-tauri/vm/runtime/
+*.log
+eval/bakeoff/transcripts-*
+.release-build.log
+/.claude/

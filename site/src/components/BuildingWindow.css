@@ -1,0 +1,164 @@
+/* The self-building window: one loop of five real requests.
+   Ported 1:1 from the original static site; every selector is scoped under .bw
+   and every keyframe is prefixed bw- so Tailwind utilities cannot collide. */
+
+@property --acc { syntax: "<color>"; inherits: true; initial-value: #141210; }
+@property --done { syntax: "<number>"; inherits: true; initial-value: 0; }
+
+.bw { --loop: 22s; container-type: inline-size; }
+
+.bw .win {
+  background: color-mix(in srgb, var(--acc) 5%, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-win);
+  box-shadow: 0 40px 80px -48px rgba(20, 18, 16, 0.55), 0 2px 6px -2px rgba(20, 18, 16, 0.12);
+  overflow: hidden;
+  aspect-ratio: 16 / 8.6;
+  font-size: clamp(13px, 1.62cqi, 18px);
+  display: flex; flex-direction: column;
+  line-height: 1.6;
+  animation: bw-theme var(--loop) linear infinite;
+}
+.bw .win-bar {
+  display: flex; align-items: center; gap: 7px; padding: 11px 14px;
+  border-bottom: 1px solid var(--line); font-size: 0.78em; color: var(--ink-2);
+  background: var(--surface);
+}
+.bw .win-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); display: inline-block; }
+.bw .win-bar span { margin: 0 auto; transform: translateX(-24px); }
+.bw .win-body { flex: 1; display: flex; min-height: 0; position: relative; }
+
+.bw .rail {
+  width: 0; overflow: hidden; border-right: 0 solid var(--line);
+  display: flex; flex-direction: column; gap: 4px; font-size: 0.8em;
+  padding: 16px 0 0; white-space: nowrap; position: relative;
+  background: var(--surface);
+  animation: bw-rail var(--loop) cubic-bezier(.2,.8,.2,1) infinite;
+}
+.bw .rail b { font-weight: 640; padding: 0 16px 6px; }
+.bw .rail .row { padding: 7px 16px; color: var(--ink-2); }
+.bw .rail .row.on { background: color-mix(in srgb, var(--acc) 14%, transparent); color: var(--ink); box-shadow: inset 3px 0 0 var(--acc); }
+.bw .cat {
+  position: absolute; left: 14px; bottom: 10px; color: var(--acc);
+  opacity: 0; animation: bw-cat var(--loop) ease infinite;
+}
+.bw .cat svg { display: block; }
+.bw .zz {
+  position: absolute; left: 56px; top: -6px; font-size: 0.8em; font-weight: 640; color: var(--ink-2);
+  animation: bw-zz 2.6s ease-in-out infinite;
+}
+
+.bw .stage {
+  flex: 1; display: flex; flex-direction: column; padding: 16px; min-width: 0; position: relative;
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.2px);
+  background-size: 18px 18px;
+  background-position: 9px 9px;
+}
+.bw .hint {
+  position: absolute; inset: 0 0 70px 0; display: grid; place-items: center; margin: 0; max-width: none;
+  color: var(--ink-2); font-size: 0.95em; animation: bw-hint var(--loop) ease infinite;
+}
+.bw .cards { flex: 1; position: relative; }
+.bw .card {
+  position: absolute; left: 0; right: 0; bottom: 6px;
+  display: grid; gap: 4px; padding: 12px 14px; font-size: 0.82em;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 10px 24px -18px rgba(20, 18, 16, 0.5);
+  opacity: 0;
+}
+.bw .card b { font-weight: 600; }
+.bw .card .busy, .bw .card .done { grid-area: 2 / 1; color: var(--ink-2); }
+.bw .card .busy { opacity: calc(1 - var(--done)); }
+.bw .card .busy::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 7px; vertical-align: -1px;
+  border: 2px solid var(--line); border-top-color: var(--acc); border-radius: 50%;
+  animation: bw-spin 0.8s linear infinite;
+}
+.bw .card .done { opacity: var(--done); }
+.bw .card .done::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--acc); margin-right: 8px; vertical-align: 1px;
+}
+.bw .c1 { animation: bw-c1 var(--loop) ease infinite; }
+.bw .c2 { animation: bw-c2 var(--loop) ease infinite; }
+.bw .c3 { animation: bw-c3 var(--loop) ease infinite; }
+.bw .c4 { animation: bw-c4 var(--loop) ease infinite; }
+.bw .c5 { animation: bw-c5 var(--loop) ease infinite; }
+
+.bw .sheet {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 46%;
+  background: var(--surface); border-left: 1px solid var(--line);
+  box-shadow: -18px 0 40px -30px rgba(20, 18, 16, 0.6);
+  padding: 16px; display: flex; flex-direction: column; gap: 4px; font-size: 0.8em;
+  transform: translateX(105%); animation: bw-sheet var(--loop) cubic-bezier(.2,.8,.2,1) infinite;
+  z-index: 2;
+}
+.bw .sheet b { font-weight: 640; margin-bottom: 6px; }
+.bw .mail { padding: 8px 0; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bw .mail i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--acc); margin-right: 8px; vertical-align: 1px; }
+.bw .mail.read { color: var(--ink-2); }
+.bw .mail.read i { background: transparent; }
+
+.bw .composer {
+  margin-top: 10px; display: flex; align-items: center; gap: 8px; position: relative; z-index: 3;
+  background: var(--surface);
+  border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 8px 8px 12px; font-size: 0.85em;
+}
+.bw .typing { flex: 1; position: relative; height: 1.45em; overflow: hidden; }
+.bw .t { position: absolute; left: 0; top: 0; white-space: nowrap; overflow: hidden; width: 0; }
+.bw .t1 { animation: bw-t1 var(--loop) linear infinite; }
+.bw .t2 { animation: bw-t2 var(--loop) linear infinite; }
+.bw .t3 { animation: bw-t3 var(--loop) linear infinite; }
+.bw .t4 { animation: bw-t4 var(--loop) linear infinite; }
+.bw .t5 { animation: bw-t5 var(--loop) linear infinite; }
+.bw .mic {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
+  color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, transparent);
+  transform: scale(0); animation: bw-mic var(--loop) ease infinite;
+}
+.bw .send { background: var(--acc); color: var(--surface); padding: 6px 12px; border-radius: 8px; font-weight: 560; }
+
+/* Timeline (percent of --loop):
+   r1 type 6-11 send 13, card 13-28 (done at 17), mic 17
+   r2 type 28-33 send 35, card 35-48 (done 39), rail 39
+   r3 type 48-53 send 55, card 55-66 (done 59), cat 59
+   r4 type 66-70 send 72, card 72-80 (done 75), theme 75
+   r5 type 80-84 send 86, card 86-96 (done 89), sheet 89
+   reset 96-100 */
+@keyframes bw-hint { 0%, 6% { opacity: 1; } 8%, 97% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes bw-t1 { 0%, 6% { width: 0; opacity: 1; animation-timing-function: steps(21, end); } 11% { width: 100%; } 13% { width: 100%; opacity: 1; } 13.5%, 100% { width: 100%; opacity: 0; } }
+@keyframes bw-t2 { 0%, 28% { width: 0; opacity: 1; animation-timing-function: steps(23, end); } 33% { width: 100%; } 35% { width: 100%; opacity: 1; } 35.5%, 100% { width: 100%; opacity: 0; } }
+@keyframes bw-t3 { 0%, 48% { width: 0; opacity: 1; animation-timing-function: steps(29, end); } 53% { width: 100%; } 55% { width: 100%; opacity: 1; } 55.5%, 100% { width: 100%; opacity: 0; } }
+@keyframes bw-t4 { 0%, 66% { width: 0; opacity: 1; animation-timing-function: steps(22, end); } 70% { width: 100%; } 72% { width: 100%; opacity: 1; } 72.5%, 100% { width: 100%; opacity: 0; } }
+@keyframes bw-t5 { 0%, 80% { width: 0; opacity: 1; animation-timing-function: steps(24, end); } 84% { width: 100%; } 86% { width: 100%; opacity: 1; } 86.5%, 100% { width: 100%; opacity: 0; } }
+@keyframes bw-c1 { 0%, 13% { opacity: 0; transform: translateY(8px); --done: 0; } 14% { opacity: 1; transform: none; } 17% { --done: 0; } 17.6% { --done: 1; } 28% { opacity: 1; --done: 1; } 29%, 100% { opacity: 0; --done: 1; } }
+@keyframes bw-c2 { 0%, 35% { opacity: 0; transform: translateY(8px); --done: 0; } 36% { opacity: 1; transform: none; } 39% { --done: 0; } 39.6% { --done: 1; } 48% { opacity: 1; --done: 1; } 49%, 100% { opacity: 0; --done: 1; } }
+@keyframes bw-c3 { 0%, 55% { opacity: 0; transform: translateY(8px); --done: 0; } 56% { opacity: 1; transform: none; } 59% { --done: 0; } 59.6% { --done: 1; } 66% { opacity: 1; --done: 1; } 67%, 100% { opacity: 0; --done: 1; } }
+@keyframes bw-c4 { 0%, 72% { opacity: 0; transform: translateY(8px); --done: 0; } 73% { opacity: 1; transform: none; } 75% { --done: 0; } 75.6% { --done: 1; } 80% { opacity: 1; --done: 1; } 81%, 100% { opacity: 0; --done: 1; } }
+@keyframes bw-c5 { 0%, 86% { opacity: 0; transform: translateY(8px); --done: 0; } 87% { opacity: 1; transform: none; } 89% { --done: 0; } 89.6% { --done: 1; } 96% { opacity: 1; --done: 1; } 97.5%, 100% { opacity: 0; --done: 1; } }
+@keyframes bw-mic { 0%, 17% { transform: scale(0); } 18.4% { transform: scale(1.18); } 19.4% { transform: scale(1); } 96% { transform: scale(1); } 98%, 100% { transform: scale(0); } }
+@keyframes bw-rail { 0%, 39% { width: 0; border-right-width: 0; } 42% { width: 31%; border-right-width: 1px; } 96% { width: 31%; border-right-width: 1px; } 99%, 100% { width: 0; border-right-width: 0; } }
+@keyframes bw-cat { 0%, 59% { opacity: 0; transform: translateY(8px); } 61% { opacity: 1; transform: none; } 96% { opacity: 1; } 97.5%, 100% { opacity: 0; } }
+@keyframes bw-theme { 0%, 75% { --acc: var(--accent-a); } 77.5% { --acc: var(--accent-b); } 96% { --acc: var(--accent-b); } 99%, 100% { --acc: var(--accent-a); } }
+@keyframes bw-sheet { 0%, 89% { transform: translateX(105%); } 92% { transform: none; } 96% { transform: none; } 98.5%, 100% { transform: translateX(105%); } }
+@keyframes bw-spin { to { transform: rotate(360deg); } }
+@keyframes bw-zz { 0%, 100% { transform: translate(0, 0); opacity: 0.4; } 50% { transform: translate(4px, -6px); opacity: 1; } }
+
+/* Reduced motion: no loop. The window shows its final state — mic, rail, napping cat,
+   the new colour scheme, the inbox sheet and the last build card, done. */
+@media (prefers-reduced-motion: reduce) {
+  .bw .win, .bw .rail, .bw .hint, .bw .card, .bw .t, .bw .mic, .bw .cat, .bw .sheet, .bw .zz, .bw .card .busy::before { animation: none !important; }
+  .bw .win { --acc: var(--accent-b); }
+  .bw .rail { width: 31%; border-right-width: 1px; }
+  .bw .hint { opacity: 0; }
+  .bw .cat { opacity: 1; }
+  .bw .mic { transform: none; }
+  .bw .sheet { transform: none; }
+  .bw .c5 { opacity: 1; --done: 1; }
+  .bw .t { width: 0; }
+}
+
+@media (max-width: 680px) {
+  .bw .win { aspect-ratio: 4 / 3.6; }
+  .bw .sheet { width: 62%; }
+}

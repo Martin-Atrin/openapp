@@ -1,0 +1,27 @@
+{
+  "name": "openapp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "tauri": "tauri",
+    "verify:bundle": "node src-tauri/scripts/verify-bundle.ts",
+    "test": "node scripts/test.ts"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2",
+    "lucide-react": "^1.57.0",
+    "react": "19",
+    "react-dom": "19"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2",
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

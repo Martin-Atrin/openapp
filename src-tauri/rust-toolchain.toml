@@ -1,0 +1,6 @@
+# Project-local toolchain (contract §17): microsandbox 0.7.8 pulls sqlx 0.9 (MSRV 1.94).
+# rustup installs it side by side; the global default toolchain is not changed.
+[toolchain]
+channel = "1.94.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

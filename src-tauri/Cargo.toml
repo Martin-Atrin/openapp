@@ -1,0 +1,85 @@
+[package]
+name = "openapp"
+version = "0.1.0"
+description = "OpenApp — a self-assembling agent workspace"
+authors = ["polygonface"]
+license = "Apache-2.0"
+repository = ""
+edition = "2024"
+rust-version = "1.94"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "openapp_lib"
+# desktop only: the binary links the rlib (staticlib/cdylib are for Tauri mobile targets)
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.12.4", features = ["unstable", "tray-icon", "image-png"] }
+tauri-plugin-log = "2"
+tokio = { version = "1", features = ["full"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server", "transport-child-process", "transport-streamable-http-server"] }
+axum = { version = "0.8", features = ["ws"] }
+anyhow = "1"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+tokio-util = "0.7"
+sha2 = "0.10"
+# first-run guest image download: zstd archive, statvfs disk check (both already in the dependency tree)
+zstd = "0.13"
+libc = "0.2"
+# App VM runtime (contract §16/§17). Pinned: the SDK checks that the msb + libkrunfw pair matches.
+microsandbox = { version = "=0.7.8", default-features = false, features = ["local", "net"] }
+# §20 connect: net.fetch on the host, OAuth token exchange, IMAP over TLS (all already in the dependency tree)
+reqwest = "0.13"
+url = "2"
+base64 = "0.22"
+rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false }
+webpki-roots = "1"
+# §21 G4/G5 native shell + files (official plugins, pinned; macOS-supported; used from Rust only)
+tauri-plugin-clipboard-manager = "=2.5.0"
+tauri-plugin-global-shortcut = "=2.4.1"
+tauri-plugin-dialog = "=2.8.3"
+# §21 G6 jobs (cron schedules), G7 secret.generate (ed25519 / x25519 / RSA keys; already in the tree via rustls)
+cron = "0.15"
+aws-lc-rs = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# §20.1 secrets in the macOS Keychain
+security-framework = "3"
+# §21 G4/G5: share sheet (NSSharingServicePicker), security-scoped bookmarks (NSURL), drag out of the window
+objc2 = "0.6"
+# §21 G4 media gate: the WKWebView capture callback's decision block
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["std", "NSURL", "NSData", "NSError", "NSString", "NSArray", "NSGeometry", "NSObject"] }
+objc2-app-kit = { version = "0.3", features = ["std", "NSSharingService", "NSView", "NSWindow", "NSResponder", "NSEvent", "NSApplication", "NSGraphics"] }
+drag = "=2.1.1"
+
+[dev-dependencies]
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
+
+# Dev tools (gated-provider real-login runs, contract dumps); the suites are tests/ + examples/gui_shell.rs (TESTING.md).
+[[example]]
+name = "acp_smoke"
+path = "examples/dev/acp_smoke.rs"
+
+[[example]]
+name = "codex_smoke"
+path = "examples/dev/codex_smoke.rs"
+
+[[example]]
+name = "mcp_serve"
+path = "examples/dev/mcp_serve.rs"
+
+[[example]]
+name = "contract_dump"
+path = "examples/dev/contract_dump.rs"
