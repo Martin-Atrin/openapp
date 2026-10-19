@@ -174,4 +174,5 @@ tables), `ROADMAP.md` and this file. The old text stays in git history.
 - Fix: the guest relay `vm/vsock-relay.py` replaces `socat` on the three routes: frames `[type u8][len u32 BE]`,
   writes of at most 16 KiB; the host (`vm::deframe`) acks every 64 KiB; the guest closes first (a host close can
   overtake queued data, microsandbox#1753). `vm_suite bulk_vm`: 3 MiB through CONNECT and SOCKS5 in ≈ 1 s.
+- Reported upstream: https://github.com/superradcompany/microsandbox/issues/1878 (drop the relay once fixed).
 - Egress now logs the real byte counts and the error of a failed tunnel (`copy_bidirectional` lost both).
