@@ -25,6 +25,8 @@ export interface Kernel {
   harnessLogin(id: string, method?: string): Promise<void>;
   /** §17: input for an open sign-in: `code` = pasted redirect URL, `apikey` = provider API key. Never log or keep it. */
   harnessLoginSubmit(id: string, kind: "code" | "apikey", value: string, provider?: string): Promise<void>;
+  /** §17: remove one stored login of a VM harness (Pi: `provider`); the harness restarts without it. */
+  harnessLogout(id: string, provider: string): Promise<void>;
   answerQuestion(requestId: string, answers: Record<string, string[]>): Promise<void>;
   /** §20.1: the value goes straight to the Keychain; null cancels. Never log or keep it. */
   submitSecret(requestId: string, value: string | null): Promise<void>;
@@ -88,6 +90,9 @@ class TauriKernel implements Kernel {
   }
   async harnessLoginSubmit(id: string, kind: "code" | "apikey", value: string, provider?: string) {
     await invoke("harness_login_submit", { id, kind, value, provider: provider ?? null });
+  }
+  async harnessLogout(id: string, provider: string) {
+    await invoke("harness_logout", { id, provider });
   }
   async respondPermission(requestId: string, optionId: string | null) {
     await invoke("respond_permission", { requestId, optionId });

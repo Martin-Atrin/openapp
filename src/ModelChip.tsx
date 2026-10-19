@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Cpu, RefreshCw, Zap } from "lucide-react";
 import type { ModelInfo, Mode } from "./contract";
+import { openAccounts } from "./Picker";
 import { useShell } from "./store";
 
 /** `xhigh` → "Extra high" (the harness's own effort names otherwise, capitalised). */
@@ -25,6 +26,8 @@ export function ModelChip({ mode }: { mode: Mode }) {
     [snapshot.models, agent.harness],
   );
   const current = catalog.find((m) => m.id === agent.model) ?? null;
+  const accounts = snapshot.harnesses?.find((h) => h.id === agent.harness)?.accounts ?? null;
+  const inUse = accounts?.logins.find((l) => l.active) ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -124,6 +127,12 @@ export function ModelChip({ mode }: { mode: Mode }) {
             </div>
           ) : null}
           <div className="oa-model-foot">
+            {accounts ? (
+              <div className="oa-model-account">
+                <span>{inUse ? `Signed in: ${inUse.label}` : "Not signed in"}</span>
+                <button type="button" className="oa-btn oa-btn-ghost" onClick={() => { setOpen(false); openAccounts(); }}>Accounts…</button>
+              </div>
+            ) : null}
             <span>Build: {buildName ?? "same as chat"} · Strong: {strongName ?? "not set"}</span>
             <label className="oa-model-policy">
               <input type="checkbox" checked={prefs?.policy !== "auto"} disabled={busy} onChange={(e) => void act({ host: "model.policy", policy: e.target.checked ? "ask" : "auto" })} />

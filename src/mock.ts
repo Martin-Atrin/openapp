@@ -88,19 +88,29 @@ function seedSessions(): { sessions: SessionMeta[]; chats: Record<string, ChatIt
   };
 }
 
+/** Pi's sign-in choices (pi.rs `methods`). */
+const PI_METHODS = [
+  { id: "chatgpt", label: "Sign in with ChatGPT" },
+  { id: "claude", label: "Sign in with Claude", note: "Anthropic may restrict the use of Claude subscriptions in third-party apps." },
+  { id: "apikey", label: "Use an API key", providers: [{ id: "openai", label: "OpenAI" }, { id: "anthropic", label: "Anthropic" }] },
+];
+
 const HARNESSES: HarnessInfo[] = [
   { id: "codex", name: "Codex · isolated VM", adapter: "codex-app-server", available: true, signedIn: false, vm: true, note: "Sign in required: Codex in the app VM has its own login", login: { state: "required" } },
   {
     id: "pi", name: "Pi · isolated VM", adapter: "pi-rpc", available: true, signedIn: false, vm: true, note: "Sign in required: Pi in the app VM has its own login",
-    login: { state: "required", methods: [
-      { id: "chatgpt", label: "Sign in with ChatGPT" },
-      { id: "claude", label: "Sign in with Claude", note: "Anthropic may restrict the use of Claude subscriptions in third-party apps." },
-      { id: "apikey", label: "Use an API key", providers: [{ id: "openai", label: "OpenAI" }, { id: "anthropic", label: "Anthropic" }] },
-    ] },
+    login: { state: "required", methods: PI_METHODS },
   },
   { id: "claude", name: "Claude Code", adapter: "acp", available: true, signedIn: null, note: "Login could not be verified" },
   { id: "gemini", name: "Gemini CLI", adapter: "acp", available: false, signedIn: null, note: "Not installed" },
 ];
+
+/** Mock of the kernel's stored-login list (pi.rs `refresh_account`): one login per provider, the newest in use. */
+function mockAddLogin(h: HarnessInfo, provider: string, type: "oauth" | "api_key") {
+  const label = type === "api_key" ? `${provider === "openai" ? "OpenAI" : "Anthropic"} API key` : provider === "openai" ? "ChatGPT" : "Claude";
+  const rest = (h.accounts?.logins ?? []).filter((l) => l.provider !== provider).map((l) => ({ ...l, active: false }));
+  h.accounts = { logins: [{ provider, type, label, active: true }, ...rest], methods: PI_METHODS };
+}
 
 /** `?gated=1` previews release gating: only Pi is usable, the rest are "Coming soon". */
 const GATED = typeof location !== "undefined" && new URLSearchParams(location.search).get("gated") === "1";
@@ -347,6 +357,20 @@ export class MockKernel implements Kernel {
     h.login = undefined;
     h.signedIn = true;
     h.note = kind === "apikey" ? `API key: ${provider ?? "provider"} (in the app VM)` : "Signed in (in the app VM)";
+    if (kind === "apikey" && provider) mockAddLogin(h, provider, "api_key");
+    this.emitSnap();
+  }
+
+  async harnessLogout(id: string, provider: string) {
+    const h = HARNESSES.find((x) => x.id === id);
+    if (!h?.accounts) throw `Provider "${id}" keeps its login outside OpenApp`;
+    h.accounts.logins = h.accounts.logins.filter((l) => l.provider !== provider);
+    if (h.accounts.logins.length) h.accounts.logins[0]!.active = true;
+    else {
+      h.signedIn = false;
+      h.login = { state: "required", methods: h.accounts.methods };
+      h.note = "Sign in required: Pi in the app VM has its own login";
+    }
     this.emitSnap();
   }
 
@@ -365,6 +389,7 @@ export class MockKernel implements Kernel {
     h.login = undefined;
     h.signedIn = true;
     h.note = "Signed in with ChatGPT (in the app VM)";
+    if (h.id === "pi") mockAddLogin(h, method === "claude" ? "anthropic" : "openai", "oauth");
     this.emitSnap();
   }
 

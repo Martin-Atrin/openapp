@@ -46,7 +46,7 @@ HOST (macOS) — OpenApp.app                                         APP VM (Lin
 │ Kernel (Rust, src-tauri/src)                      │  bridge:       │ module MCP servers (exec stdio)       │
 │  ├─ harness client: Pi RPC / Codex / ACP ────────┼─ msb exec ────►│ module services (setsid, supervised)  │
 │  ├─ kernel HTTP 127.0.0.1:<rnd>: /mcp /host/*     │  stdio + vsock │ PTYs, Xvfb/noVNC displays             │
-│  │   /channel (WS) /hook/<token>  ◄──────────────┼─ :7801 ────────┤ socat forwarders                     │
+│  │   /channel (WS) /hook/<token>  ◄──────────────┼─ :7801 ────────┤ vsock relays (framed, acked)         │
 │  ├─ egress proxy (HTTP CONNECT) ◄────────────────┼─ :7802 ────────┤ HTTP(S)_PROXY=http://<actor>@…:7802  │
 │  ├─ egress SOCKS5 (same policy) ◄────────────────┼─ :7803 ────────┤ OPENAPP_SOCKS_URL=socks5h://…:7803   │
 │  ├─ consent cards + grant store, research log    │                │                                       │
@@ -64,8 +64,9 @@ HOST (macOS) — OpenApp.app                                         APP VM (Lin
 - **App VM** = microsandbox 0.7.8 (libkrun, Hypervisor.framework); no network device (§8).
 - **Bridge** = microsandbox exec sessions (piped stdio or PTY) plus three vsock forwards: guest `127.0.0.1:7801` → kernel
   HTTP server (MCP, `/host`, `/channel`, `/hook`), guest `127.0.0.1:7802` → egress proxy, guest `127.0.0.1:7803` → egress
-  SOCKS5. Login callback ports
-  (1455, 53692) are forwarded host → guest only while a sign-in runs.
+  SOCKS5. Each route is a guest relay (`vm/vsock-relay.py`) and the host's `vm::deframe`: frames of at most 16 KiB,
+  a host ack every 64 KiB (raw libkrun routes stall after 256 KiB of upload and lose writes above ~32 KiB). Login
+  callback ports (1455, 53692) are forwarded host → guest only while a sign-in runs.
 - **Host services / host modules** = Swift JSON-RPC sidecars on the Mac (§9).
 
 ## 3. Workspace and state dir
@@ -311,7 +312,7 @@ output_tail}`), `kernel/agents` (`{op: start|step|result|error|cancelled, run, a
 
 ### 6.6 Chat commands
 `/build [text]` · `/chat` · `/undo [n]` · `/reset` (empty canvas + default theme; modules kept) · `/provider`
-(back to the picker) · `/model [chat|build|strong] <name> [effort] | policy ask|auto | refresh | default` ·
+(back to the picker) · `/account` (the account card, §7.3) · `/model [chat|build|strong] <name> [effort] | policy ask|auto | refresh | default` ·
 `/safe` / `/safe off`. Handled by the kernel, never sent to the agent.
 
 ## 7. Providers
@@ -319,7 +320,8 @@ output_tail}`), `kernel/agents` (`{op: start|step|result|error|cancelled, run, a
 ### 7.1 Picker
 First screen when no provider is picked (agent status `unselected`). `HarnessInfo = { id, name, adapter:
 "pi-rpc"|"codex-app-server"|"acp", available, signedIn: bool|null, note?, vm?, login?: { state:
-required|starting|browser|device|failed, url?, code?, message? }, comingSoon? }`. Choice persists in
+required|starting|browser|device|failed, url?, code?, message? }, accounts?: { logins: [{ provider, type, label,
+active }], methods }, comingSoon? }`. Choice persists in
 `<state>/harness.json`; `harness.select` stops the old harness and starts the new one; sessions stay; per-harness
 thread/session mappings. `OPENAPP_HARNESS` (tests) overrides the saved choice.
 
@@ -352,6 +354,12 @@ true}` without any PATH or login probe; the picker shows them dimmed and inert.
 - Sign-in: ChatGPT or Claude OAuth inside the VM (callback 1455 / 53692 forwarded; or paste the redirect URL with
   `harness_login_submit(id, "code", value)`), or an API key (`harness_login_submit(id, "apikey", key, provider)` →
   VM `auth.json`, 0600, never logged). After sign-in Pi restarts; sign-in writes no model.
+- Account card (kernel chrome: model chip › Accounts…, OpenApp menu › Accounts…, `/account`): the stored logins
+  (`HarnessInfo.accounts`, never a value) with Sign out (`harness_logout(id, provider)` removes it from `auth.json`;
+  another login becomes the default; Pi restarts), sign in again, another provider, or a new API key (replaces the
+  provider's key). Pi refreshes OAuth tokens itself; when a turn fails because the provider refused the login (401,
+  expired or revoked token, wrong key), the harness turns `signedIn: false` and the sign-in card opens with the
+  reason.
 
 ### 7.4 Codex and ACP (gated)
 - Codex `0.162.1` in `/opt/openapp/runtimes/codex/0.162.1`, `CODEX_HOME=/opt/openapp/home/codex`, approval `never`,
@@ -362,11 +370,12 @@ true}` without any PATH or login probe; the picker shows them dimmed and inert.
   Build turns prepend "follow the skill at <path>".
 
 ### 7.5 Models (§23 behaviour)
-- Discovery after start/sign-in, on `models.refresh`, daily: Codex `model/list` (paged, `includeHidden`); Pi
+- Discovery after start/sign-in, on `models.refresh`, every 6 hours while Pi runs, daily: Codex `model/list` (paged, `includeHidden`); Pi
   `/openapp-models` (Pi's catalog filtered by the account's live list fetched with Pi's own credentials); ACP
   `configOptions` (category `model`, `thought_level`) or `models.availableModels`.
 - Catalog `{id, displayName, description, efforts[], defaultEffort, hidden, isDefault, harness}` in snapshot
-  `models`, describe and host data; additions/removals research-logged.
+  `models`, describe and host data; additions/removals research-logged; a model the account newly offers is named
+  in one system line ("New from your account: …").
 - Choice per harness: slots `chat`, `build` (falls back to chat), `strong` of `{model, effort}` in `models.json`.
   No choice → catalog `isDefault`, else first non-hidden — never a literal. Applied per turn (Codex `model`/`effort`;
   Pi `set_model` + `set_thinking_level`; ACP `session/set_config_option`/`session/set_model`).
@@ -540,7 +549,7 @@ folder_grant folder_revoke job job_run jobs_wake login_item agent_run agent_tool
 · `ui_action(placement_id, action, input?) → result` · `iframe_call(module, tool, args)` · `web_bounds(placement_id,
 rect|null)` · `answer_question(request_id, answers{id: string[]})` · `save_audio(placement_id, data, mime, action?,
 duration_ms?)` · `select_harness(id)` · `harness_login(id, method?)` · `harness_login_submit(id, kind, value,
-provider?)` · `submit_secret(request_id, value|null)` · `channel_subscribe(placement_id, topic)` ·
+provider?)` · `harness_logout(id, provider)` · `submit_secret(request_id, value|null)` · `channel_subscribe(placement_id, topic)` ·
 `channel_unsubscribe(sub)` · `channel_publish(placement_id, message)` · `primitive_command(name, args?,
 placement_id?)` (`shortcut.fire`, `files.drop`, `shell.icon`) · `report_ui_error(placement_id, message)`.
 **Events:** `oa://snapshot` (Snapshot) · `oa://chat` (`{op: append, item} | {op: update, id, patch}`) ·

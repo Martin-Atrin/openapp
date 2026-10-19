@@ -227,6 +227,7 @@ impl Kernel {
                     });
                 }
                 h.login = o.login.clone();
+                h.accounts = o.accounts.clone();
             }
         }
     }
@@ -536,6 +537,10 @@ impl Kernel {
                 return;
             }
             return self.send_prompt(rest);
+        }
+        if t == "/account" || t == "/accounts" {
+            crate::primitives::shell::emit_shell(self, json!({ "op": "accounts" }));
+            return;
         }
         if t == "/provider" {
             crate::harness::unselect(self);

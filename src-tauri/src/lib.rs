@@ -126,6 +126,12 @@ async fn harness_login_submit(k: K<'_>, id: String, kind: String, value: String,
     harness::login_submit(k.inner(), &id, &kind, &value, provider.as_deref()).await
 }
 
+/// §17: remove one stored login of a VM harness (Pi: a provider in the VM's auth.json) and restart it.
+#[tauri::command]
+async fn harness_logout(k: K<'_>, id: String, provider: String) -> Result<(), String> {
+    harness::logout(k.inner(), &id, &provider).await
+}
+
 /// §20.1: the value goes straight to the Keychain (never into chat, logs or the research log).
 #[tauri::command]
 async fn submit_secret(k: K<'_>, request_id: String, value: Option<String>) -> Result<(), String> {
@@ -241,6 +247,7 @@ pub fn run() {
             select_harness,
             harness_login,
             harness_login_submit,
+            harness_logout,
             web_bounds,
             answer_question,
             save_audio,

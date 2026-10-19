@@ -1,5 +1,5 @@
 //! §21 G4 menus: `menu.set` builds the app menu bar from the kernel's fixed OpenApp menu (About, Provider…,
-//! Safe mode, Quit), the standard Edit / View / Window menus, then every module's menus (merged by title).
+//! Accounts…, Safe mode, Quit), the standard Edit / View / Window menus, then every module's menus (merged by title).
 //! A click runs the item's action as the owning module (placement id `menu`).
 
 use crate::research::Kind;
@@ -137,12 +137,13 @@ fn build(k: &Kernel, app: &tauri::AppHandle) -> tauri::Result<Menu<R>> {
     let safe_on = super::lifecycle::safe_mode(k);
     let about = PredefinedMenuItem::about(app, Some("About OpenApp"), Some(AboutMetadata { name: Some("OpenApp".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default() }))?;
     let provider = MenuItem::with_id(app, "oa:k:provider", "Provider…", true, None::<&str>)?;
+    let accounts = MenuItem::with_id(app, "oa:k:accounts", "Accounts…", true, None::<&str>)?;
     let safe = CheckMenuItem::with_id(app, "oa:k:safe", "Safe Mode", true, safe_on, None::<&str>)?;
     let app_menu = Submenu::with_items(
         app,
         "OpenApp",
         true,
-        &[&about, &sep()?, &provider, &safe, &sep()?, &PredefinedMenuItem::services(app, None)?, &sep()?, &PredefinedMenuItem::hide(app, None)?, &PredefinedMenuItem::hide_others(app, None)?, &PredefinedMenuItem::show_all(app, None)?, &sep()?, &PredefinedMenuItem::quit(app, None)?],
+        &[&about, &sep()?, &provider, &accounts, &safe, &sep()?, &PredefinedMenuItem::services(app, None)?, &sep()?, &PredefinedMenuItem::hide(app, None)?, &PredefinedMenuItem::hide_others(app, None)?, &PredefinedMenuItem::show_all(app, None)?, &sep()?, &PredefinedMenuItem::quit(app, None)?],
     )?;
     let edit = Submenu::with_items(
         app,
@@ -218,6 +219,10 @@ pub fn on_menu_event(k: &Arc<Kernel>, id: &str) {
         "oa:k:provider" => {
             let _ = super::shell_misc::show_main(k);
             shell::emit_shell(k, json!({ "op": "provider" }));
+        }
+        "oa:k:accounts" => {
+            let _ = super::shell_misc::show_main(k);
+            shell::emit_shell(k, json!({ "op": "accounts" }));
         }
         "oa:k:safe" => {
             // §21 G9 toggle through the lifecycle primitive's host action

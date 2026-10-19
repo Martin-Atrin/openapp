@@ -82,6 +82,15 @@ export interface HarnessInfo {
   comingSoon?: boolean;
   /** §17: sign-in flow of a VM harness (absent when signed in or unknown) */
   login?: HarnessLogin;
+  /** §17: stored logins of a VM harness (Pi) and the sign-in choices, for the account card */
+  accounts?: HarnessAccounts;
+}
+
+/** §17 the account card of a VM harness: sign in again, add a provider, replace an API key, sign out. */
+export interface HarnessAccounts {
+  /** never holds a credential value */
+  logins: { provider: string; type: "oauth" | "api_key" | string; label: string; active: boolean }[];
+  methods: HarnessLoginMethod[];
 }
 
 /** §17 sign-in flow state of a VM harness. */

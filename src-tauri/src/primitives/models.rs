@@ -292,7 +292,7 @@ fn is_subsequence(needle: &str, hay: &str) -> bool {
 /// Replace a harness's catalog (adapters call this after discovery). Logs added/removed, drops choices whose
 /// model left (one system line each), refreshes the harness note and announces the default after a sign-in.
 pub fn set_catalog(k: &Kernel, harness: &str, models: Vec<ModelInfo>, source: &str, error: Option<String>) {
-    let (added, removed, vanished, now) = write(k, |s| {
+    let (added, removed, vanished, now, fresh) = write(k, |s| {
         let rejected = s.rejected.get(harness).cloned().unwrap_or_default();
         let mut seen = BTreeSet::new();
         let models: Vec<ModelInfo> = models
@@ -306,6 +306,8 @@ pub fn set_catalog(k: &Kernel, harness: &str, models: Vec<ModelInfo>, source: &s
         let old: Vec<String> = s.catalogs.get(harness).map(|c| c.models.iter().map(|m| m.id.clone()).collect()).unwrap_or_default();
         let new: Vec<String> = models.iter().map(|m| m.id.clone()).collect();
         let added: Vec<String> = new.iter().filter(|i| !old.contains(i)).cloned().collect();
+        // a model the account did not offer before (not the first discovery): named once in the chat
+        let fresh: Vec<String> = if old.is_empty() { Vec::new() } else { models.iter().filter(|m| added.contains(&m.id) && !m.hidden).map(|m| m.display_name.clone()).collect() };
         let removed: Vec<String> = old.iter().filter(|i| !new.contains(i)).cloned().collect();
         let mut vanished = Vec::new();
         if !models.is_empty() {
@@ -323,7 +325,7 @@ pub fn set_catalog(k: &Kernel, harness: &str, models: Vec<ModelInfo>, source: &s
             harness.to_string(),
             Catalog { models, source: source.to_string(), fetched_at: crate::state::now_ts(), fetched_unix: (crate::util::now_secs() as u64), error: error.clone() },
         );
-        (added, removed, vanished, fallback)
+        (added, removed, vanished, fallback, fresh)
     });
     k.research.log(
         "kernel",
@@ -342,6 +344,10 @@ pub fn set_catalog(k: &Kernel, harness: &str, models: Vec<ModelInfo>, source: &s
         };
         k.system_message("system", &msg);
         k.research.log("kernel", Kind::ModelSwitch, json!({ "harness": harness, "slot": slot, "from": model, "to": now, "reason": "vanished" }));
+    }
+    if !fresh.is_empty() {
+        let more = if fresh.len() > 4 { format!(" and {} more", fresh.len() - 4) } else { String::new() };
+        k.system_message("system", &format!("New from your account: {}{more}. Choose it in the model chip.", fresh.iter().take(4).cloned().collect::<Vec<_>>().join(", ")));
     }
     note_harness(k, harness);
     let announce = st(k).announce.locked().remove(harness);

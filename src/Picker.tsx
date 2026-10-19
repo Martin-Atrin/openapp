@@ -4,7 +4,13 @@ import type { HarnessInfo } from "./contract";
 import { kernel } from "./kernel";
 import { useShell } from "./store";
 
-type Mode = "pick" | "starting" | "error" | "signin";
+type Mode = "pick" | "starting" | "error" | "signin" | "account";
+
+/** Window event that opens the account card (the model chip sends it; `App` listens). */
+export const ACCOUNTS_EVENT = "oa:accounts";
+export function openAccounts() {
+  window.dispatchEvent(new Event(ACCOUNTS_EVENT));
+}
 
 /** Pi: paste the address the browser ended on (browser on another computer, or a blocked callback). */
 function PasteUrl({ busy, onSubmit }: { busy: boolean; onSubmit: (v: string) => void }) {
@@ -39,41 +45,67 @@ function ApiKeyForm({ providers, busy, onSubmit }: { providers: { id: string; la
   );
 }
 
-/** §17: sign-in card for a VM provider ("Sign in to Codex for OpenApp"). */
-function SignIn({ h, empty, onReopen }: { h: HarnessInfo; empty: boolean; onReopen: () => void }) {
+/** One stored login on the account card: the name, "in use", and a two-step Sign out. */
+function LoginRow({ label, active, busy, onSignOut }: { label: string; active: boolean; busy: boolean; onSignOut: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <li className="oa-account-row">
+      <span className="oa-account-name">{label}</span>
+      {active ? <span className="oa-model-tag is-muted">in use</span> : null}
+      {confirm ? (
+        <span className="oa-account-confirm">
+          <button type="button" className="oa-btn oa-btn-danger" disabled={busy} onClick={onSignOut}>Sign out</button>
+          <button type="button" className="oa-btn oa-btn-ghost" disabled={busy} onClick={() => setConfirm(false)}>Keep</button>
+        </span>
+      ) : (
+        <button type="button" className="oa-btn oa-btn-ghost oa-account-out" disabled={busy} onClick={() => setConfirm(true)}>Sign out…</button>
+      )}
+    </li>
+  );
+}
+
+/** Pi sign-in choices that match a stored login get "again" ("Sign in again with ChatGPT"). */
+const METHOD_LOGIN: Record<string, { provider: string; type: string }> = { chatgpt: { provider: "openai", type: "oauth" }, claude: { provider: "anthropic", type: "oauth" } };
+
+/**
+ * §17: sign-in card for a VM provider ("Sign in to Codex for OpenApp"). With `onClose` it is the account card,
+ * opened from the model chip while signed in: the stored logins (sign out), sign in again, another provider, or
+ * a new API key (it replaces the provider's old key). Both use the same sign-in flows.
+ */
+function SignIn({ h, empty, onReopen, onClose }: { h: HarnessInfo; empty: boolean; onReopen: () => void; onClose?: () => void }) {
   const { toast } = useShell();
   const [busy, setBusy] = useState(false);
   const [showKey, setShowKey] = useState(false);
+  const manage = !!onClose;
   const login = h.login ?? { state: "required" as const };
-  const methods = login.methods ?? null;
-  const start = async (method?: string) => {
+  const offered = login.methods ?? h.accounts?.methods;
+  const methods = offered?.length ? offered : null;
+  const logins = h.accounts?.logins ?? [];
+  const run = async (f: () => Promise<void>) => {
     setBusy(true);
     try {
-      await kernel.harnessLogin(h.id, method);
+      await f();
     } catch (err) {
       toast(String(err), "error");
     } finally {
       setBusy(false);
     }
   };
-  const submit = async (kind: "code" | "apikey", value: string, provider?: string) => {
-    setBusy(true);
-    try {
-      await kernel.harnessLoginSubmit(h.id, kind, value, provider);
-    } catch (err) {
-      toast(String(err), "error");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const start = (method?: string) => run(() => kernel.harnessLogin(h.id, method));
+  const submit = (kind: "code" | "apikey", value: string, provider?: string) => run(() => kernel.harnessLoginSubmit(h.id, kind, value, provider));
+  const signOut = (provider: string) => run(() => kernel.harnessLogout(h.id, provider));
   const openUrl = (url: string) => void kernel.uiAction("chat", { host: "open_url", url });
   const product = h.name.split(" · ")[0] || h.name;
   const waiting = login.state === "starting" || busy;
   const keyMethod = methods?.find((m) => m.providers?.length);
+  const methodLabel = (id: string, label: string) => {
+    const l = METHOD_LOGIN[id];
+    return l && logins.some((x) => x.provider === l.provider && x.type === l.type) ? label.replace(/^Sign in/, "Sign in again") : label;
+  };
   return (
     <div className="oa-composer-block oa-picker-block" data-empty={empty}>
       <div className="oa-picker oa-signin" aria-busy={waiting}>
-        <h1 className="oa-picker-title">Sign in to {product} for OpenApp</h1>
+        <h1 className="oa-picker-title">{manage ? `Accounts for ${product}` : `Sign in to ${product} for OpenApp`}</h1>
         <p className="oa-picker-hint">{product} runs in OpenApp's isolated VM with its own login. Your login stays inside the VM.</p>
         <div className="oa-signin-body">
           {login.state === "device" ? (
@@ -96,14 +128,20 @@ function SignIn({ h, empty, onReopen }: { h: HarnessInfo; empty: boolean; onReop
               {login.paste ? <PasteUrl busy={busy} onSubmit={(v) => void submit("code", v)} /> : null}
             </>
           ) : waiting ? (
-            <p className="oa-signin-step"><Loader2 size={14} className="oa-spin" aria-hidden="true" /> Starting sign-in…</p>
+            <p className="oa-signin-step"><Loader2 size={14} className="oa-spin" aria-hidden="true" /> {busy && manage ? "Working…" : "Starting sign-in…"}</p>
           ) : methods ? (
             <>
               {login.state === "failed" ? <p className="oa-signin-error" role="alert">{login.message || "Sign-in failed."}</p> : null}
+              {manage && logins.length ? (
+                <ul className="oa-account-list" aria-label="Stored logins">
+                  {logins.map((l) => <LoginRow key={l.provider} label={l.label} active={l.active} busy={busy} onSignOut={() => void signOut(l.provider)} />)}
+                </ul>
+              ) : null}
+              {manage ? <p className="oa-signin-note">{logins.length ? "Sign in again, add another provider, or replace an API key:" : "Sign in:"}</p> : null}
               <div className="oa-signin-actions">
                 {methods.filter((m) => !m.providers?.length).map((m, i) => (
                   <button key={m.id} type="button" className={`oa-btn${i === 0 ? " oa-btn-primary" : ""}`} onClick={() => start(m.id)}>
-                    {i === 0 ? <KeyRound size={14} aria-hidden="true" /> : null} {m.label}
+                    {i === 0 ? <KeyRound size={14} aria-hidden="true" /> : null} {methodLabel(m.id, m.label)}
                   </button>
                 ))}
                 {keyMethod ? (
@@ -123,7 +161,10 @@ function SignIn({ h, empty, onReopen }: { h: HarnessInfo; empty: boolean; onReop
             </>
           )}
         </div>
-        <button type="button" className="oa-btn oa-btn-ghost oa-signin-other" onClick={onReopen}>Pick another provider</button>
+        <div className="oa-signin-actions oa-signin-other">
+          {manage ? <button type="button" className="oa-btn" onClick={onClose}>Done</button> : null}
+          <button type="button" className="oa-btn oa-btn-ghost" onClick={onReopen}>Pick another provider</button>
+        </div>
       </div>
     </div>
   );
@@ -138,7 +179,7 @@ function indicator(h: HarnessInfo): { tone: "ok" | "unknown" | "off"; label: str
 }
 
 /** Kernel chrome: shown instead of the composer until a provider is picked (§11). */
-export function Picker({ mode, empty, onReopen }: { mode: Mode; empty: boolean; onReopen: () => void }) {
+export function Picker({ mode, empty, onReopen, onCloseAccount }: { mode: Mode; empty: boolean; onReopen: () => void; onCloseAccount?: () => void }) {
   const { snapshot, toast } = useShell();
   const { agent } = snapshot;
   // Release gating: usable providers first (stable), "Coming soon" ones after.
@@ -181,9 +222,9 @@ export function Picker({ mode, empty, onReopen }: { mode: Mode; empty: boolean; 
     btns[next]!.focus();
   };
 
-  if (mode === "signin") {
+  if (mode === "signin" || mode === "account") {
     const h = harnesses.find((x) => x.id === agent.harness);
-    if (h) return <SignIn h={h} empty={empty} onReopen={onReopen} />;
+    if (h) return <SignIn h={h} empty={empty} onReopen={onReopen} onClose={mode === "account" ? onCloseAccount : undefined} />;
   }
 
   if (mode === "error") {

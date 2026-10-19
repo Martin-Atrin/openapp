@@ -76,6 +76,10 @@ pub struct HarnessInfo {
     /// url?, code?, message? }` (absent when signed in or unknown).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub login: Option<serde_json::Value>,
+    /// VM harnesses (Pi): `{ logins: [{ provider, type, label, active }], methods }` for the account card: sign in
+    /// again, add a provider, replace an API key, sign out. Never holds a credential value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accounts: Option<serde_json::Value>,
     /// Release gating: not usable in this build ("Coming soon"); the card is dimmed and inert.
     #[serde(rename = "comingSoon", skip_serializing_if = "std::ops::Not::not")]
     pub coming_soon: bool,
@@ -88,6 +92,7 @@ pub struct Overlay {
     pub signed_in: Option<bool>,
     pub note: Option<String>,
     pub login: Option<serde_json::Value>,
+    pub accounts: Option<serde_json::Value>,
     /// §23 the current model (`GPT-X · High`), appended to the card note.
     pub model_note: Option<String>,
 }
@@ -160,6 +165,7 @@ async fn detect_one(path_env: String, s: HarnessSpec, gated: bool) -> HarnessInf
         note: None,
         vm: s.vm,
         login: None,
+        accounts: None,
         coming_soon: false,
     };
     // Gated: answer without touching the system (no PATH lookup, no probe, no ~/.codex or ~/.gemini read).
@@ -374,6 +380,15 @@ pub async fn login_submit(k: &Arc<Kernel>, id: &str, kind: &str, value: &str, pr
     match spec.adapter {
         Adapter::Pi => crate::pi::login_submit(k, kind, value, provider).await,
         _ => Err(format!("{} does not take sign-in input here", spec.name)),
+    }
+}
+
+/// Command `harness_logout {id, provider}`: remove one stored login of a VM harness (Pi) and restart it.
+pub async fn logout(k: &Arc<Kernel>, id: &str, provider: &str) -> Result<(), String> {
+    let spec = spec_by_id(k.custom_cmd.as_deref(), id).ok_or_else(|| refused(id))?;
+    match spec.adapter {
+        Adapter::Pi => crate::pi::logout(k, provider).await,
+        _ => Err(format!("{} keeps its login outside OpenApp", spec.name)),
     }
 }
 

@@ -160,3 +160,18 @@ tables), `ROADMAP.md` and this file. The old text stays in git history.
   embed an Info.plist (shared `USAGE_DESCRIPTIONS`, test against `Info.plist`); TCC uses the *responsible* process's
   plist, so outside the app bundle host modules are spawned with `responsibility_spawnattrs_setdisclaim`
   (`posix_spawn(POSIX_SPAWN_SETEXEC)` from `pre_exec`); E12's SIGABRT came from the probes harness being responsible.
+
+## 2026-10-19 — vsock routes stall after 256 KiB of upload
+
+- Symptom: Pi turns in a long chat failed with "Connection error." after 4 × 15 s. Pi's request (≈ 300 KB) went
+  through the egress proxy; the host sent exactly the TLS hello + 262,144 bytes to OpenAI, which closed the idle
+  tunnel after 15 s. Small requests and every download worked; a curl upload "worked" only because the server
+  answered 401 before reading the body (its reply carried a credit refresh).
+- Cause (msb_krun_devices 0.1.41 = microsandbox 0.7.8, guest kernel 6.12.111): the guest caps its vsock send window
+  at its own 256 KiB buffer; libkrun's custom stream backend sends a credit update only every 4 MiB
+  (`CONN_TX_BUF_SIZE / 2`), or with a packet of its own. Also, libkrun reads one data descriptor per TX packet, and
+  writes above ~32 KiB arrive as multi-descriptor packets, which are lost.
+- Fix: the guest relay `vm/vsock-relay.py` replaces `socat` on the three routes: frames `[type u8][len u32 BE]`,
+  writes of at most 16 KiB; the host (`vm::deframe`) acks every 64 KiB; the guest closes first (a host close can
+  overtake queued data, microsandbox#1753). `vm_suite bulk_vm`: 3 MiB through CONNECT and SOCKS5 in ≈ 1 s.
+- Egress now logs the real byte counts and the error of a failed tunnel (`copy_bidirectional` lost both).

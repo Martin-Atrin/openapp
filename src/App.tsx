@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Composer } from "./Composer";
-import { Picker } from "./Picker";
+import { ACCOUNTS_EVENT, Picker } from "./Picker";
 import { Transcript } from "./Chat";
 import { Anchor, PlacementView } from "./PlacementView";
 import { hostList, useFileDrops, useIconRenderer, useShellEvents, useShortcuts, windowId, type ShellWindow } from "./shell";
@@ -54,17 +54,31 @@ function Center() {
   // "Pick another provider" (after an error or from the sign-in card) reopens the picker locally;
   // cleared once a new choice starts.
   const [forced, setForced] = useState(false);
+  // §17 account card (sign in again, another provider, API keys, sign out): OpenApp menu › Accounts…, `/account`,
+  // the model chip. A sign-in or sign-out restarts the provider, which closes it.
+  const [accounts, setAccounts] = useState(false);
   // §21 G4: OpenApp menu › Provider… reopens the picker
   useShellEvents((e) => {
     if (e.op === "provider") setForced(true);
+    if (e.op === "accounts") setAccounts(true);
   });
+  useEffect(() => {
+    const open = () => setAccounts(true);
+    window.addEventListener(ACCOUNTS_EVENT, open);
+    return () => window.removeEventListener(ACCOUNTS_EVENT, open);
+  }, []);
   useEffect(() => {
     if (forced && (agent.status === "starting" || agent.status === "working" || (agent.status === "ready" && !needsSignIn))) setForced(false);
   }, [forced, agent.status, needsSignIn]);
-  const pickerMode: "pick" | "starting" | "error" | "signin" | null =
+  useEffect(() => {
+    if (accounts && (agent.status === "starting" || agent.status === "unselected")) setAccounts(false);
+  }, [accounts, agent.status]);
+  const canManage = !!current?.vm && !!current.accounts && agent.status === "ready";
+  const pickerMode: "pick" | "starting" | "error" | "signin" | "account" | null =
     forced || agent.status === "unselected" ? "pick"
     : agent.status === "error" ? "error"
     : needsSignIn ? "signin"
+    : accounts && canManage ? "account"
     : agent.status === "starting" && chat.length === 0 ? "starting"
     : null;
   const hasMain = placementsAt("main").length > 0;
@@ -108,7 +122,7 @@ function Center() {
         </div>
       </div>
       {pickerMode ? (
-        <Picker mode={pickerMode} empty={empty} onReopen={() => setForced(true)} />
+        <Picker mode={pickerMode} empty={empty} onReopen={() => setForced(true)} onCloseAccount={() => setAccounts(false)} />
       ) : (
         <Composer empty={empty} />
       )}

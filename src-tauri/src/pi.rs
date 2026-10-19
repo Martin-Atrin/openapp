@@ -45,6 +45,9 @@ const OAUTH: &[(&str, &str, &str, u16)] = &[("chatgpt", "openai", "ChatGPT", 145
 /// API-key providers offered on the card (their API hosts are on the egress allowlist).
 const API_KEY_PROVIDERS: &[(&str, &str)] = &[("openai", "OpenAI"), ("anthropic", "Anthropic")];
 
+/// §23: how often a running Pi discovers its account's models again.
+const MODELS_REFRESH: Duration = Duration::from_secs(6 * 3600);
+
 /// Prefix of the `/openapp-models` reply (`notify` message; workspace-template/pi/openapp.ts).
 const MODELS_MARK: &str = "openapp.models:";
 /// Test transport: run this host command as the Pi RPC process instead of Pi in the app VM.
@@ -302,6 +305,29 @@ fn required() -> Value {
     json!({ "state": "required", "methods": methods() })
 }
 
+/// One stored login as the account card names it ("ChatGPT", "Claude", "OpenAI API key").
+fn login_label(p: &str, t: &str) -> String {
+    match (p, t) {
+        ("openai", "oauth") => "ChatGPT".into(),
+        ("anthropic", "oauth") => "Claude".into(),
+        (p, "api_key") => format!("{} API key", provider_label(p)),
+        (p, _) => provider_label(p),
+    }
+}
+
+/// The provider's answer means the stored login no longer works (expired, revoked, wrong key): the user must sign in
+/// again. Connection and model errors do not match.
+pub fn auth_refused(error: &str) -> bool {
+    let e = error.to_ascii_lowercase();
+    [
+        "401", "unauthorized", "unauthenticated", "invalid_api_key", "invalid api key", "incorrect api key", "authentication",
+        "token has expired", "token expired", "token_expired", "invalid_grant", "refresh token", "failed to refresh",
+        "sign in again", "log in again", "login again", "re-authenticate", "no api key", "not logged in",
+    ]
+    .iter()
+    .any(|p| e.contains(p))
+}
+
 fn provider_label(p: &str) -> String {
     match p {
         "openai" => "OpenAI".into(),
@@ -323,8 +349,15 @@ async fn refresh_account(k: &Arc<Kernel>, c: &Arc<PiConn>, model: Option<String>
         Some((p, _)) => format!("Signed in: {} (in the app VM)", provider_label(p)),
         None => "Sign in required: Pi in the app VM has its own login".to_string(),
     };
+    let active = primary.map(|(p, _)| p.clone());
+    let logins: Vec<Value> = creds
+        .iter()
+        .map(|(p, t)| json!({ "provider": p, "type": t, "label": login_label(p, t), "active": active.as_deref() == Some(p.as_str()) }))
+        .collect();
+    let accounts = json!({ "logins": logins, "methods": methods() });
     let flow_open = c.login.locked().is_some();
     k.update_harness(&c.harness_id, |o| {
+        o.accounts = Some(accounts);
         o.signed_in = Some(signed);
         if signed {
             o.login = None;
@@ -676,6 +709,21 @@ pub async fn run(k: Arc<Kernel>, spec: harness::HarnessSpec) {
             );
             k.set_agent_name(&spec.name);
             k.set_agent("ready", None);
+            // §23: what an account offers changes (new releases, plan changes): discover again every 6 hours
+            if signed {
+                let (k, c) = (k.clone(), c.clone());
+                tokio::spawn(async move {
+                    loop {
+                        tokio::time::sleep(MODELS_REFRESH).await;
+                        if !conn(&k).is_some_and(|cur| Arc::ptr_eq(&cur, &c)) {
+                            return;
+                        }
+                        if let Err(e) = discover_models(&k).await {
+                            log::warn!("pi model discovery: {e}");
+                        }
+                    }
+                });
+            }
         }
         Err(e) => {
             let last = modules::tail_lines(&c.tail, 10).join("\n");
@@ -787,6 +835,16 @@ pub async fn run_turn(k: Arc<Kernel>, oa: String, text: String, build: bool) {
                 k.system_message_in(&oa, "system", "Stopped.");
             } else if let Some(e) = error {
                 k.system_message_in(&oa, "error", &format!("The turn failed: {e}"));
+                // the stored login stopped working: the sign-in card opens instead of the composer
+                if auth_refused(&e) {
+                    let who = chosen.as_ref().and_then(|r| r.model.id.split('/').next().map(provider_label)).unwrap_or_else(|| "The provider".into());
+                    k.update_harness(&c.harness_id, |o| {
+                        o.signed_in = Some(false);
+                        o.login = Some(json!({ "state": "failed", "message": format!("{who} refused the sign-in ({}). Sign in again, or use another login.", crate::util::short(&e, 160)), "methods": methods() }));
+                        o.note = Some("Sign-in expired: sign in again".into());
+                    });
+                    k.research.log("kernel", Kind::HarnessAccount, json!({ "harness": c.harness_id, "signed_in": false, "reason": "refused", "error": e }));
+                }
                 // §23: the provider refused the model for this account → drop it, fall back
                 if let Some(msg) = chosen.as_ref().and_then(|r: &crate::primitives::models::Resolved| crate::primitives::models::reject(&k, &c.harness_id, &r.model.id, &e)) {
                     k.system_message_in(&oa, "system", &msg);
@@ -1313,6 +1371,36 @@ pub async fn login_submit(k: &Arc<Kernel>, kind: &str, value: &str, provider: Op
     }
 }
 
+/// Sign out of one provider: remove its login from the VM's auth.json and restart Pi so it drops it. When it was the
+/// default provider, another stored login becomes the default (none left: the sign-in card opens).
+pub async fn logout(k: &Arc<Kernel>, provider: &str) -> Result<(), String> {
+    let c = conn(k).ok_or("Pi is not running")?;
+    let vm = k.vm().ok_or("the app VM is not running")?;
+    let path = format!("{VM_PI_HOME}/auth.json");
+    let mut auth = read_guest_json(&vm, &path).await.and_then(|v| v.as_object().cloned()).unwrap_or_default();
+    let Some(gone) = auth.remove(provider) else {
+        return Err(format!("there is no stored login for {}", provider_label(provider)));
+    };
+    let label = login_label(provider, gone.get("type").and_then(Value::as_str).unwrap_or(""));
+    let text = serde_json::to_string_pretty(&Value::Object(auth.clone())).unwrap_or_default();
+    vm.write_file(&path, format!("{text}\n").as_bytes()).await?;
+    let _ = vm.sh(&format!("chmod 600 {path}"), &[]).await;
+    let settings = read_guest_json(&vm, &format!("{VM_PI_HOME}/settings.json")).await;
+    if settings.as_ref().and_then(|s| s.get("defaultProvider")).and_then(Value::as_str) == Some(provider) {
+        let mut m = Map::new();
+        m.insert("defaultProvider".into(), auth.keys().next().map(|p| json!(p)).unwrap_or(Value::Null));
+        m.insert("defaultModel".into(), Value::Null);
+        m.insert("defaultThinkingLevel".into(), Value::Null);
+        if let Err(e) = merge_settings(&vm, m).await {
+            log::warn!("pi settings: {e}");
+        }
+    }
+    k.research.log("user", Kind::HarnessLogin, json!({ "phase": "signed_out", "harness": c.harness_id, "provider": provider }));
+    k.system_message("system", &format!("Signed out: {label} is removed from the app VM."));
+    harness::restart(k);
+    Ok(())
+}
+
 /// Cancel an open sign-in; the card goes back to the choices.
 pub fn login_cancel(k: &Arc<Kernel>) {
     let Some(c) = conn(k) else { return };
@@ -1346,6 +1434,17 @@ mod tests {
         assert_eq!(model_of(&json!({ "model": { "provider": "unknown", "id": "unknown" } })), None);
         assert_eq!(model_of(&json!({ "model": { "provider": "fakeco", "id": "fake-model-1" } })).as_deref(), Some("fakeco/fake-model-1"));
         assert!(EXTENSION_TS.contains(ASK_MARK));
+    }
+
+    #[test]
+    fn refused_sign_in() {
+        assert!(auth_refused("401 Unauthorized: token has expired"));
+        assert!(auth_refused("Incorrect API key provided: sk-…"));
+        assert!(auth_refused("Failed to refresh OAuth token for openai"));
+        assert!(!auth_refused("Connection error."));
+        assert!(!auth_refused("The 'fake-model' model is not supported when using Codex with a ChatGPT account."));
+        assert_eq!(login_label("openai", "oauth"), "ChatGPT");
+        assert_eq!(login_label("anthropic", "api_key"), "Anthropic API key");
     }
 
     #[test]
