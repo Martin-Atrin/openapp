@@ -18,7 +18,8 @@ and `cargo test`, and optionally the VM suite and the GUI suite, then prints a s
   window (`shell_headless`).
 - `src-tauri/tests/vm_suite.rs` (`#[ignore]`): `vm_smoke`, `services_smoke`, `pi_smoke`, `channels_vm`, `wave2_vm`,
   `socks_vm` (SOCKS5 egress: cards allow/deny/IP literal, socks5h, curl `$ALL_PROXY`, proxychains4, `"net": "socks"`,
-  sockets removed on shutdown).
+  sockets removed on shutdown), `bulk_vm` (3 MiB uploads and downloads through both egress routes, a 1 MiB MCP
+  request: the framed vsock relay).
 - `src-tauri/tests/models.rs`: §23 model discovery against fake Codex / Pi processes (`tests/fakes`).
 - `src-tauri/tests/support/`: the shared sink (`Collect`), `check!`, `wait_for`, card auto-answers, scratch dirs,
   the scratch VM home, process isolation; `fixtures.rs` holds module sources shared by host and VM halves.

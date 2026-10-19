@@ -475,8 +475,40 @@ pub async fn serve<S: AsyncRead + AsyncWrite + Unpin>(k: Arc<Kernel>, mut s: S) 
         let _ = up.write_all(&rest).await;
         sent_extra += rest.len() as u64;
     }
-    let (a, b) = tokio::io::copy_bidirectional(&mut s, &mut up).await.unwrap_or((0, 0));
-    log(&k, "allow", reason, a + sent_extra, b, None);
+    let (a, b, err) = relay(&mut s, &mut up).await;
+    log(&k, "allow", reason, a + sent_extra, b, err);
+}
+
+/// Copy both directions of a tunnel until both end: (bytes up, bytes down, first error). Unlike
+/// `copy_bidirectional`, the counts survive an error, so a reset tunnel is logged with what it moved.
+async fn relay<A: AsyncRead + AsyncWrite + Unpin, B: AsyncRead + AsyncWrite + Unpin>(a: &mut A, b: &mut B) -> (u64, u64, Option<String>) {
+    let (mut ar, mut aw) = tokio::io::split(a);
+    let (mut br, mut bw) = tokio::io::split(b);
+    let ((up, e1), (down, e2)) = tokio::join!(pump(&mut ar, &mut bw), pump(&mut br, &mut aw));
+    (up, down, e1.or(e2))
+}
+
+async fn pump<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(r: &mut R, w: &mut W) -> (u64, Option<String>) {
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut n = 0u64;
+    loop {
+        match r.read(&mut buf).await {
+            Ok(0) => {
+                let _ = w.shutdown().await;
+                return (n, None);
+            }
+            Ok(m) => {
+                if let Err(e) = w.write_all(&buf[..m]).await {
+                    return (n, Some(format!("write: {e}")));
+                }
+                n += m as u64;
+            }
+            Err(e) => {
+                let _ = w.shutdown().await;
+                return (n, Some(format!("read: {e}")));
+            }
+        }
+    }
 }
 
 // ---------- SOCKS5 (RFC 1928 CONNECT, RFC 1929 user name = actor) ----------
@@ -614,8 +646,8 @@ pub async fn serve_socks<S: AsyncRead + AsyncWrite + Unpin>(k: Arc<Kernel>, mut 
         }
     };
     socks_reply(&mut s, 0x00).await;
-    let (a, b) = tokio::io::copy_bidirectional(&mut s, &mut up).await.unwrap_or((0, 0));
-    log(&k, "allow", reason, a, b, None);
+    let (a, b, err) = relay(&mut s, &mut up).await;
+    log(&k, "allow", reason, a, b, err);
 }
 
 #[cfg(test)]

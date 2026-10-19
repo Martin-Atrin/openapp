@@ -8,6 +8,7 @@
 //!   (OPENAPP_SMOKE_LAN=1 really opens the LAN listener; OPENAPP_SMOKE_LAN_PORT, default 18093).
 //! - pi_smoke: §11/§12.4 Pi in the VM (OPENAPP_SMOKE_PI_FAKE_KEY=0 / OPENAPP_SMOKE_PI_TOOLS=0 skip parts).
 //! - channels_vm, wave2_vm: the VM halves of the channels and wave-2 cases in `kernel_host.rs`.
+//! - bulk_vm: 3 MiB up/down through the HTTP CONNECT and SOCKS5 routes and a 1 MiB MCP request (the vsock relay).
 
 #[macro_use]
 mod support;
@@ -1186,6 +1187,85 @@ async fn socks_vm_case(cx: Ctx) -> anyhow::Result<()> {
     k.shutdown();
     check!(!run_dir.join("proxy.sock").exists() && !run_dir.join("socks.sock").exists() && openapp_lib::vm::running_vms(&openapp_lib::vm::vm_home()).is_empty(), "shutdown removes the sockets: the VM home no longer looks running");
     println!("TIMING shutdown {} ms; total {} s", t.elapsed().as_millis(), t_all.elapsed().as_secs());
+    println!("ALL PASS");
+    Ok(())
+}
+
+// ================================================================ bulk_vm: large transfers over the vsock routes
+
+#[test]
+#[ignore = "boots the app VM (cargo test --test vm_suite -- --ignored)"]
+fn bulk_vm() {
+    isolated("bulk_vm", Opts { env: &[("OPENAPP_TEST_EGRESS_LOCAL", "1")], vm: true, keychain: false }, bulk_vm_case);
+}
+
+/// A Mac test server that answers only after it has read the whole request body (as an API server does):
+/// `POST` → "got <n>"; `GET /<n>` → n bytes.
+async fn bulk_server() -> anyhow::Result<u16> {
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let port = l.local_addr()?.port();
+    tokio::spawn(async move {
+        while let Ok((mut s, _)) = l.accept().await {
+            tokio::spawn(async move {
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") && s.read_exact(&mut b).await.is_ok() {
+                    head.push(b[0]);
+                }
+                let h = String::from_utf8_lossy(&head).to_string();
+                let len: usize = h.lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse().unwrap_or(0))).unwrap_or(0);
+                let mut body = vec![0u8; len];
+                let got = if s.read_exact(&mut body).await.is_ok() { len } else { 0 };
+                let out = if h.starts_with("GET /") {
+                    let n: usize = h.split_whitespace().nth(1).and_then(|p| p.trim_start_matches('/').parse().ok()).unwrap_or(0);
+                    vec![b'x'; n]
+                } else {
+                    format!("got {got}").into_bytes()
+                };
+                let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", out.len()).as_bytes()).await;
+                let _ = s.write_all(&out).await;
+                let _ = s.shutdown().await;
+            });
+        }
+    });
+    Ok(port)
+}
+
+async fn bulk_vm_case(cx: Ctx) -> anyhow::Result<()> {
+    let ws = cx.ws;
+    let port = bulk_server().await?;
+    let sink = Arc::new(support::Collect::default());
+    let k = Kernel::new_opts(ws.clone(), None, None, sink.clone())?;
+    let host = format!("reach localhost:{port}");
+    auto_answer(&k, &sink, move |c| c["title"].as_str().unwrap_or("").contains(host.as_str()).then(|| "allow_workspace".to_string()));
+    k.start(false).await?;
+    let vm = vm_up(&k).await?;
+    let env = openapp_lib::vm::proxy_env("agent");
+    let (code, _, err) = vm.sh("head -c 3145728 /dev/zero > /tmp/big", &[]).await.map_err(anyhow::Error::msg)?;
+    check!(code == 0, "3 MiB test body in the guest ({err})");
+    let (code, out, err) = vm.sh(&format!("curl -sS -m 10 --noproxy '' -p -x \"$HTTPS_PROXY\" --data-binary small http://localhost:{port}/"), &env).await.map_err(anyhow::Error::msg)?;
+    check!(code == 0 && out == "got 5", "small upload through HTTP CONNECT ({out:?} {err:?})");
+    // uploads larger than the vsock route's 256 KiB credit; the server is silent until it has the whole body
+    for (via, flags) in [("HTTP CONNECT", "-p -x \"$HTTPS_PROXY\""), ("SOCKS5", "--socks5-hostname 127.0.0.1:7803 --proxy-user agent:openapp")] {
+        let t = Instant::now();
+        let (code, out, err) = vm.sh(&format!("curl -sS -m 30 --noproxy '' {flags} --data-binary @/tmp/big http://localhost:{port}/"), &env).await.map_err(anyhow::Error::msg)?;
+        check!(code == 0 && out == "got 3145728", "3 MiB upload through {via} in {} ms ({out:?} {err:?})", ms(t));
+        let t = Instant::now();
+        let (code, out, err) = vm.sh(&format!("curl -sS -m 30 --noproxy '' {flags} http://localhost:{port}/3145728 | wc -c"), &env).await.map_err(anyhow::Error::msg)?;
+        check!(code == 0 && out.trim() == "3145728", "3 MiB download through {via} in {} ms ({out:?} {err:?})", ms(t));
+    }
+    // the MCP route: a large tool call reaches the kernel MCP server whole
+    let token = k.mcp.get().map(|e| e.token.clone()).unwrap_or_default();
+    let (code, out, err) = vm
+        .sh(
+            &format!("python3 -c 'import json,sys; sys.stdout.write(json.dumps({{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{{}},\"clientInfo\":{{\"name\":\"bulk\",\"version\":\"1\",\"pad\":\"x\"*1048576}}}}}}))' > /tmp/mcp.json && curl -sS -m 30 --noproxy '*' -o /dev/null -w '%{{http_code}}' -H 'Authorization: Bearer {token}' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' --data-binary @/tmp/mcp.json http://127.0.0.1:7801/mcp"),
+            &[],
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+    check!(code == 0 && out == "200", "1 MiB MCP request over the vsock route ({out:?} {err:?})");
+    drop(vm);
+    k.shutdown();
     println!("ALL PASS");
     Ok(())
 }

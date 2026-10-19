@@ -5,7 +5,11 @@
 //!   persistent ext4 volume (harness CLIs, their homes and logins). The rootfs is disposable.
 //! - The VM has NO network device. Guest egress goes only through the kernel HTTP CONNECT proxy
 //!   (`egress.rs`), reached through a guest-local port forwarded over vsock.
-//! - Forwarders (simplest robust option: `socat` from the guest image, no custom guest binary):
+//! - Forwarders: the guest relay `vm/vsock-relay.py` (python3 from the guest image, written at boot) listens on the
+//!   guest port and frames the stream over vsock in writes of at most 16 KiB; [`deframe`] undoes it on the host and
+//!   acknowledges every 64 KiB. A raw `socat` route stalls after 256 KiB to a server that waits for the whole body
+//!   (libkrun returns credit every 4 MiB, the guest kernel waits after its own 256 KiB buffer) and loses writes
+//!   above ~32 KiB (multi-descriptor packets): the Pi "Connection error." of long chats. Details in the relay.
 //!   - guest 127.0.0.1:7801 → vsock 7801 → host unix socket `run/<vm>/mcp.sock` → kernel MCP server (TCP)
 //!   - guest 127.0.0.1:7802 → vsock 7802 → host unix socket `run/<vm>/proxy.sock` → kernel egress proxy
 //!   - guest 127.0.0.1:7803 → vsock 7803 → host unix socket `run/<vm>/socks.sock` → kernel SOCKS5 egress
@@ -715,8 +719,96 @@ fn remove_sockets(run_dir: &Path) {
     let _ = std::fs::remove_file(run_dir.join("owner.pid"));
 }
 
-/// What happens to a connection that arrives on a host unix socket of a vsock route.
-pub type StreamHandler = Arc<dyn Fn(tokio::net::UnixStream) + Send + Sync>;
+/// What happens to a connection that arrives on a host unix socket of a vsock route (already deframed).
+pub type StreamHandler = Arc<dyn Fn(DuplexStream) + Send + Sync>;
+
+/// The guest side of every vsock route (see the module docs).
+const VSOCK_RELAY_PY: &str = include_str!("../vm/vsock-relay.py");
+const VSOCK_RELAY_GUEST: &str = "/run/openapp/vsock-relay.py";
+/// Frames of the vsock route protocol: `[type u8][len u32 BE][payload]`.
+const FRAME_DATA: u8 = 0;
+const FRAME_END: u8 = 1;
+const FRAME_ACK: u8 = 2;
+/// Bytes from the guest between two acks (the route's credit is 256 KiB).
+const ACK_EVERY: usize = 64 * 1024;
+/// Largest frame accepted from the guest (the relay sends at most 64 KiB).
+const FRAME_LIMIT: usize = 1 << 20;
+
+fn frame(kind: u8, payload: &[u8]) -> Vec<u8> {
+    let mut f = Vec::with_capacity(5 + payload.len());
+    f.push(kind);
+    f.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    f.extend_from_slice(payload);
+    f
+}
+
+/// One vsock route connection as a plain byte stream: data frames from the guest relay come out of the returned
+/// stream, what is written into it goes back as data frames, and every [`ACK_EVERY`] bytes from the guest are
+/// acknowledged. The host keeps its side open until the guest closes (a host close can overtake queued data).
+pub fn deframe(us: tokio::net::UnixStream) -> DuplexStream {
+    let (app, inner) = tokio::io::duplex(256 * 1024);
+    tokio::spawn(relay_frames(us, inner));
+    app
+}
+
+async fn relay_frames(us: tokio::net::UnixStream, inner: DuplexStream) {
+    let (mut ur, mut uw) = us.into_split();
+    let (mut ir, mut iw) = tokio::io::split(inner);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(8);
+    let writer = tokio::spawn(async move {
+        while let Some(f) = rx.recv().await {
+            if uw.write_all(&f).await.is_err() {
+                break;
+            }
+        }
+    });
+    let down_tx = tx.clone();
+    let down = tokio::spawn(async move {
+        let mut buf = vec![0u8; ACK_EVERY];
+        loop {
+            let n = ir.read(&mut buf).await.unwrap_or(0);
+            let f = if n == 0 { frame(FRAME_END, &[]) } else { frame(FRAME_DATA, &buf[..n]) };
+            if down_tx.send(f).await.is_err() || n == 0 {
+                break;
+            }
+        }
+    });
+    let mut head = [0u8; 5];
+    let mut since_ack = 0usize;
+    let mut open = true;
+    while ur.read_exact(&mut head).await.is_ok() {
+        let len = u32::from_be_bytes([head[1], head[2], head[3], head[4]]) as usize;
+        match head[0] {
+            FRAME_DATA if len <= FRAME_LIMIT => {
+                let mut p = vec![0u8; len];
+                if ur.read_exact(&mut p).await.is_err() {
+                    break;
+                }
+                if open && iw.write_all(&p).await.is_err() {
+                    open = false;
+                }
+                since_ack += len;
+                if since_ack >= ACK_EVERY {
+                    since_ack = 0;
+                    // a full queue already carries data frames, which refresh the credit too
+                    let _ = tx.try_send(frame(FRAME_ACK, &[]));
+                }
+            }
+            FRAME_END => {
+                if open {
+                    let _ = iw.shutdown().await;
+                    open = false;
+                }
+            }
+            _ => break,
+        }
+    }
+    // the guest closed (or broke the protocol): the app side sees the end, the host side closes last
+    let _ = iw.shutdown().await;
+    down.abort();
+    drop(tx);
+    let _ = writer.await;
+}
 
 pub struct AppVm {
     pub sandbox: Sandbox,
@@ -757,7 +849,7 @@ impl AppVm {
         let proxy_l = bind_unix(&proxy_sock)?;
         let socks_l = bind_unix(&socks_sock)?;
         let _ = std::fs::write(run_dir.join("owner.pid"), std::process::id().to_string());
-        tasks.push(tokio::spawn(accept_loop(mcp_l, Arc::new(move |s: tokio::net::UnixStream| {
+        tasks.push(tokio::spawn(accept_loop(mcp_l, Arc::new(move |s: DuplexStream| {
             tokio::spawn(async move {
                 let mut s = s;
                 match tokio::net::TcpStream::connect(("127.0.0.1", mcp_port)).await {
@@ -835,6 +927,7 @@ impl AppVm {
             log::warn!("app VM volume: {}", err.trim());
         }
         let _ = grown;
+        vm.write_file(VSOCK_RELAY_GUEST, VSOCK_RELAY_PY.as_bytes()).await?;
         let vm_arc = Arc::new(vm);
         for port in [MCP_PORT, PROXY_PORT, SOCKS_PORT] {
             let t = tokio::spawn(supervise_forwarder(Arc::downgrade(&vm_arc), alive.clone(), port));
@@ -846,7 +939,7 @@ impl AppVm {
         );
         let (code, _, _) = vm_arc.exec_out("bash", &["-c".into(), probe], &[], None).await?;
         if code != 0 {
-            return Err("guest forwarders did not start (socat)".into());
+            return Err("guest forwarders did not start (vsock relay)".into());
         }
         let (_, tools, _) = vm_arc
             .sh("for t in node npm python3 git curl ffmpeg socat rg fd bwrap apt-get gcc make Xvfb x11vnc websockify qemu-x86_64 proxychains4; do printf '%s=%s\\n' $t \"$(command -v $t || true)\"; done", &[])
@@ -1091,7 +1184,7 @@ fn bind_unix(p: &Path) -> Result<tokio::net::UnixListener, String> {
 async fn accept_loop(l: tokio::net::UnixListener, handler: StreamHandler) {
     loop {
         match l.accept().await {
-            Ok((s, _)) => handler(s),
+            Ok((s, _)) => handler(deframe(s)),
             Err(e) => {
                 log::warn!("vm: accept failed: {e}");
                 tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1100,12 +1193,12 @@ async fn accept_loop(l: tokio::net::UnixListener, handler: StreamHandler) {
     }
 }
 
-/// Keep `socat TCP-LISTEN:<port> VSOCK-CONNECT:2:<port>` running in the guest.
+/// Keep the guest relay of vsock route `port` running (see the module docs).
 async fn supervise_forwarder(vm: std::sync::Weak<AppVm>, alive: Arc<AtomicBool>, port: u16) {
-    let args = vec![format!("TCP-LISTEN:{port},bind=127.0.0.1,fork,reuseaddr"), format!("VSOCK-CONNECT:2:{port}")];
+    let args = vec![VSOCK_RELAY_GUEST.to_string(), port.to_string()];
     while alive.load(Ordering::Relaxed) {
         let Some(v) = vm.upgrade() else { return };
-        let child = v.spawn("socat", &args, &[], None).await;
+        let child = v.spawn("python3", &args, &[], None).await;
         drop(v);
         match child {
             Ok(mut c) => {
